@@ -189,6 +189,19 @@ def get_tomorrows_events():
     conn.close()
     return events
 
+def get_todays_events():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    today = datetime.now().date()
+    cursor.execute("""
+        SELECT user_id, event_name, event_date 
+        FROM events 
+        WHERE event_date = ?
+    """, (today,))
+    events = cursor.fetchall()
+    conn.close()
+    return events
+
 
 #=====================================================================================================
 

@@ -70,7 +70,7 @@ async def toggle_notifications_handler(callback_query: CallbackQuery):
 async def edit_birthday_handler(callback_query: CallbackQuery, state: FSMContext):
     await callback_query.message.edit_text(
         "✏️ Please enter your new birthday in the format: *YYYY-MM-DD*\n\n"
-        "For example: `1990-05-25`",
+        "For example: `1990-05-25`\n\nUse /cancel to stop the action.",
         parse_mode='Markdown'
     )
     await state.set_state("waiting_for_new_birthday")
@@ -85,14 +85,14 @@ async def save_new_birthday(message: Message, state: FSMContext):
         update_user_birthday(user_id, new_birthday)
         await message.answer(
             f"🎉 Your birthday has been updated to: *{new_birthday}*\n\n"
-            "I’ll make sure to remind you when your special day is near! 🎂",
+            "I’ll make sure to remind you when your special day is near!",
             parse_mode='Markdown'
         )
         await state.finish()
     else:
         await message.answer(
             "❌ Invalid date format. Please enter your birthday in the format: *YYYY-MM-DD*\n\n"
-            "For example: `1990-05-25`",
+            "For example: `1990-05-25`\n\nUse /cancel to stop the action.",
             parse_mode='Markdown'
         )
 
@@ -234,13 +234,18 @@ async def delete_event_handler(callback_query: CallbackQuery):
 
 
 # MY BIRTHDAY
+import pytz
+
+KRYGYZSTAN_TZ = pytz.timezone("Asia/Bishkek")
+
 @dp.message_handler(text="🎂 My Birthday")
 async def show_birthday(message: Message):
     user_id = message.from_user.id
     birthday = get_user_birthday(user_id)  # Fetch the user's birthday from the database
 
     if birthday:
-        today = datetime.now().date()
+        now = datetime.now(KRYGYZSTAN_TZ)
+        today = now.date()
         birthday_date = datetime.strptime(birthday, "%Y-%m-%d").date()
         next_birthday = birthday_date.replace(year=today.year)
         if next_birthday < today:
@@ -248,7 +253,7 @@ async def show_birthday(message: Message):
 
         days_until_birthday = (next_birthday - today).days
         await message.answer(f"🎉 Your birthday is on *{birthday}*.\n"
-                             f"🎂 Only *{days_until_birthday} days* left until your next birthday! 🥳",
+                             f"🎂 Only *{days_until_birthday} days* left until your next birthday!",
                              parse_mode="Markdown")
     else:
         await message.answer("❌ You haven't set your birthday yet. Use the settings menu to add it!")

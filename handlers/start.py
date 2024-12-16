@@ -21,7 +21,7 @@ async def send_start_message(message: Message, state: FSMContext):
 
     if birthday:  # If birthday exists
         await message.answer(
-            f"🎉 *Welcome to Date Alert Bot!* 🎉\n\n"
+            f"*Welcome to Date Alert Bot!*\n\n"
             "📅 I'm here to help you manage your events and daily tasks.\n\n"
             "🔔 I will remind you one day before your events, so you never miss anything important.\n"
             "📝 You can also use me to keep track of your to-do tasks effortlessly.\n\n"
@@ -31,7 +31,7 @@ async def send_start_message(message: Message, state: FSMContext):
         )
     else:  # If birthday doesn't exist
         await message.answer(
-            "🎉 *Welcome to Date Alert Bot!* 🎉\n\n"
+            "*Welcome to Date Alert Bot!*\n\n"
             "I'm here to help you remember birthdays, events, and your daily to-do tasks.\n"
             "Let's start by adding your *birthday*.\n\n"
             "📅 Please enter your birthday in this format: *YYYY-MM-DD*",

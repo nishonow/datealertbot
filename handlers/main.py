@@ -14,10 +14,23 @@ from loader import dp, bot
 
 from aiogram.dispatcher.filters.state import any_state
 
-@dp.message_handler(commands=['cancel'], state=any_state)
+@dp.message_handler(commands=['cancel'], state="*")
 async def cancel_handler(message: Message, state: FSMContext):
+    # Get the stored message ID if available
+    data = await state.get_data()
+    if data:
+        msg_id = data.get('id')  # Retrieve stored message ID
+        if msg_id:  # Ensure there's an ID to work with
+            try:
+                await message.bot.edit_message_reply_markup(
+                    chat_id=message.chat.id,
+                    message_id=msg_id,
+                    reply_markup=None  # Clear the markup
+                )
+            except Exception as e:
+                pass
 
-    # Cancel the current state
+    # Finish the state and inform the user
     await state.finish()
     await message.answer("✅ Action cancelled. You can start again whenever you like.")
 
@@ -168,8 +181,9 @@ async def ask_event_details(message: Message, state: FSMContext):
 async def ask_event_date(message: Message, state: FSMContext):
     await state.update_data(event_name=message.text)
     now = datetime.now()
-    await message.answer("📅 Now, select the event date:\n\nUse /cancel to stop the action.", reply_markup=generate_calendar(now.year, now.month))
+    data = await message.answer("📅 Now, select the event date:\n\nUse /cancel to stop the action.", reply_markup=generate_calendar(now.year, now.month))
     await state.set_state("waiting_for_event_date")
+    await state.update_data(id=data.message_id)
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("change_month"), state="waiting_for_event_date")
@@ -191,7 +205,9 @@ async def save_event(callback: CallbackQuery, state: FSMContext):
     add_event(user_id, event_name, event_date)  # Your function to save the event
 
     await callback.message.answer(
-        f"✅ Event '{event_name}' on {event_date} has been added successfully. Use /view_events to see your upcoming events!")
+        f"✅ Event {event_name} on {event_date} has been added successfully. Use /view_events to see your upcoming events!")
+    data = await state.get_data()
+    await callback.message.edit_reply_markup()
     await state.finish()
     await callback.answer()
 
@@ -222,8 +238,8 @@ async def delete_event_handler(callback_query: CallbackQuery):
     event_id = int(callback_query.data.split("_")[1])
     events = get_events_by_user(callback_query.from_user.id)
 
-    event_name = next((event[1] for event in events if event[0] == event_id), None)
-    if event_name:
+    event_name_del = next((event[1] for event in events if event[0] == event_id), None)
+    if event_name_del:
         delete_event(event_id)
 
         remaining_events = get_events_by_user(callback_query.from_user.id)
@@ -235,13 +251,13 @@ async def delete_event_handler(callback_query: CallbackQuery):
 
         if remaining_events:
             await callback_query.message.edit_text(
-                f"✅ Event {event_name} has been deleted.\n\n"
+                f"✅ Event {event_name_del} has been deleted.\n\n"
                 "📅 Here are your remaining events:",
                 reply_markup=event_keyboard
             )
         else:
             await callback_query.message.edit_text(
-                f"✅ Event {event_name} has been deleted.\n\n"
+                f"✅ Event {event_name_del} has been deleted.\n\n"
                 "🗂️ You have no remaining events. Use /add_event to create one!"
             )
     else:

@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 
 start_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
@@ -17,6 +19,59 @@ def get_settings_keyboard(notifications_enabled):
         InlineKeyboardButton(text=toggle_text, callback_data="toggle_notifications")
     )
     return keyboard
+
+
+def generate_calendar(year, month):
+    markup = InlineKeyboardMarkup(row_width=7)
+    days = ["M", "T", "W", "T", "F", "S", "S"]
+
+    # Month Name and Year at the Top
+    month_name = datetime(year, month, 1).strftime('%b')  # Short month name (e.g., "Jan")
+    markup.row(
+        InlineKeyboardButton(f"{month_name}", callback_data="ignore"),
+        InlineKeyboardButton(f"{year}", callback_data="ignore")
+    )
+
+    # Weekday Header
+    markup.row(*[InlineKeyboardButton(day, callback_data="ignore") for day in days])
+
+    # Days in Month
+    first_day = datetime(year, month, 1)
+    weekday = first_day.weekday()
+    days_in_month = (first_day.replace(month=month % 12 + 1, day=1) - timedelta(days=1)).day
+
+    # Fill calendar grid dynamically, skipping completely empty rows
+    week = [" " for _ in range(7)]
+    for day in range(1, days_in_month + 1):
+        week[weekday] = str(day)
+        weekday += 1
+        if weekday == 7:  # End of the week
+            markup.row(*[InlineKeyboardButton(text,
+                                              callback_data=f"select_date:{year}-{month:02}-{text}" if text != " " else "ignore")
+                         for text in week])
+            week = [" " for _ in range(7)]
+            weekday = 0
+
+    # Add the last row only if it has valid days
+    if any(day != " " for day in week):
+        markup.row(*[InlineKeyboardButton(text,
+                                          callback_data=f"select_date:{year}-{month:02}-{text}" if text != " " else "ignore")
+                     for text in week])
+
+    # Navigation Buttons (Only < and > at the Bottom)
+    prev_month = (month - 1) if month > 1 else 12
+    next_month = (month + 1) if month < 12 else 1
+    prev_year = year if month > 1 else year - 1
+    next_year = year if month < 12 else year + 1
+
+    markup.row(
+        InlineKeyboardButton("<", callback_data=f"change_month:{prev_year}-{prev_month}"),
+        InlineKeyboardButton(" ", callback_data="ignore"),  # Placeholder for alignment
+        InlineKeyboardButton(">", callback_data=f"change_month:{next_year}-{next_month}")
+    )
+    return markup
+
+
 # ADMIN KEYBOARDS ==========================================================================
 
 adminKey = InlineKeyboardMarkup(

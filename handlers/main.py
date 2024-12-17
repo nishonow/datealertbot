@@ -8,7 +8,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from core.db import add_user, user_exists, get_user_birthday, get_user_notifications_status, toggle_user_notifications, \
     update_user_birthday, add_task, get_tasks_by_user, delete_task, get_all_users, add_event, get_events_by_user, \
     delete_event
-from core.keyboards import start_keyboard, get_settings_keyboard
+from core.keyboards import start_keyboard, get_settings_keyboard, generate_calendar
 from loader import dp, bot
 
 
@@ -163,26 +163,41 @@ async def ask_event_details(message: Message, state: FSMContext):
     await message.answer("📝 Please enter the event name:\n\nUse /cancel to stop the action.")
     await state.set_state("waiting_for_event_name")
 
+
 @dp.message_handler(state="waiting_for_event_name")
 async def ask_event_date(message: Message, state: FSMContext):
     await state.update_data(event_name=message.text)
-    await message.answer("📅 Now, enter the event date in the format YYYY-MM-DD:\n\nUse /cancel to stop the action.")
+    now = datetime.now()
+    await message.answer("📅 Now, select the event date:\n\nUse /cancel to stop the action.", reply_markup=generate_calendar(now.year, now.month))
     await state.set_state("waiting_for_event_date")
 
-@dp.message_handler(state="waiting_for_event_date")
-async def save_event(message: Message, state: FSMContext):
-    try:
-        event_date = datetime.strptime(message.text, "%Y-%m-%d").date()
-        user_id = message.from_user.id
-        data = await state.get_data()
-        event_name = data['event_name']
 
-        add_event(user_id, event_name, event_date)
+@dp.callback_query_handler(lambda c: c.data.startswith("change_month"), state="waiting_for_event_date")
+async def change_calendar_month(callback: CallbackQuery, state: FSMContext):
+    _, date_str = callback.data.split(":")
+    year, month = map(int, date_str.split("-"))
+    await callback.message.edit_reply_markup(reply_markup=generate_calendar(year, month))
+    await callback.answer()
 
-        await message.answer(f"✅ Event {event_name} on {event_date} has been added successfully. Use /view_events to see your upcoming events!")
-        await state.finish()
-    except ValueError:
-        await message.answer("❌ Invalid date format. Please enter the date in YYYY-MM-DD format.")
+
+@dp.callback_query_handler(lambda c: c.data.startswith("select_date"), state="waiting_for_event_date")
+async def save_event(callback: CallbackQuery, state: FSMContext):
+    _, date_str = callback.data.split(":")
+    event_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    user_id = callback.from_user.id
+    data = await state.get_data()
+    event_name = data['event_name']
+
+    add_event(user_id, event_name, event_date)  # Your function to save the event
+
+    await callback.message.answer(
+        f"✅ Event '{event_name}' on {event_date} has been added successfully. Use /view_events to see your upcoming events!")
+    await state.finish()
+    await callback.answer()
+
+@dp.callback_query_handler(lambda c: c.data == "ignore", state="waiting_for_event_date")
+async def ignore_callback(callback: CallbackQuery):
+    await callback.answer()
 
 
 @dp.message_handler(text=["📅 View Events", '/view_events'])

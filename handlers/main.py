@@ -1,26 +1,22 @@
 import re
 from datetime import datetime
-
 from aiogram import types
 from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters import CommandStart
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from core.db import add_user, user_exists, get_user_birthday, get_user_notifications_status, toggle_user_notifications, \
+from core.db import get_user_birthday, get_user_notifications_status, toggle_user_notifications, \
     update_user_birthday, add_task, get_tasks_by_user, delete_task, get_all_users, add_event, get_events_by_user, \
     delete_event
 from core.keyboards import start_keyboard, get_settings_keyboard, generate_calendar
 from loader import dp, bot
-
-
-from aiogram.dispatcher.filters.state import any_state
+import pytz
+KYRGYZSTAN_TZ = pytz.timezone("Asia/Bishkek")
 
 @dp.message_handler(commands=['cancel'], state="*")
 async def cancel_handler(message: Message, state: FSMContext):
-    # Get the stored message ID if available
     data = await state.get_data()
     if data:
-        msg_id = data.get('id')  # Retrieve stored message ID
-        if msg_id:  # Ensure there's an ID to work with
+        msg_id = data.get('id')
+        if msg_id:
             try:
                 await message.bot.edit_message_reply_markup(
                     chat_id=message.chat.id,
@@ -30,7 +26,6 @@ async def cancel_handler(message: Message, state: FSMContext):
             except Exception as e:
                 pass
 
-    # Finish the state and inform the user
     await state.finish()
     await message.answer("✅ Action cancelled. You can start again whenever you like.")
 
@@ -263,19 +258,13 @@ async def delete_event_handler(callback_query: CallbackQuery):
     else:
         await callback_query.answer("❌ Event not found or already deleted.", show_alert=True)
 
-
-# MY BIRTHDAY
-import pytz
-
-KRYGYZSTAN_TZ = pytz.timezone("Asia/Bishkek")
-
 @dp.message_handler(text="🎂 My Birthday")
 async def show_birthday(message: Message):
     user_id = message.from_user.id
     birthday = get_user_birthday(user_id)  # Fetch the user's birthday from the database
 
     if birthday:
-        now = datetime.now(KRYGYZSTAN_TZ)
+        now = datetime.now(KYRGYZSTAN_TZ)
         today = now.date()
         birthday_date = datetime.strptime(birthday, "%Y-%m-%d").date()
         next_birthday = birthday_date.replace(year=today.year)

@@ -1,144 +1,188 @@
 import asyncio
 import logging
 import time
-from aiogram import executor
-from loader import dp
 from datetime import datetime, timedelta
-from loader import bot
+
+from aiogram import executor
+from aiogram.utils.exceptions import BotBlocked, UserDeactivated, ChatNotFound
+
+from core.db import get_all_users, get_tomorrows_events, get_todays_events, get_all_friend_birthdays
+from loader import dp, bot
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+# ... your other imports ...
 import core
 import handlers
 import db
-from core.db import get_all_users, get_tomorrows_events, get_todays_events
 
 BOT_START_TIME = time.time()
+
 logging.basicConfig(
-    format=u'%(filename)s [LINE:%(lineno)d] #%(levelname)-8s [%(asctime)s]  %(message)s',
+    format="%(filename)s [LINE:%(lineno)d] #%(levelname)-8s [%(asctime)s]  %(message)s",
     level=logging.INFO,
 )
+logger = logging.getLogger(__name__)
 
-
-from aiogram.utils.exceptions import BotBlocked, UserDeactivated, ChatNotFound
-
+# ─────────────────────────────────────────────
+# BIRTHDAY REMINDERS
+# ─────────────────────────────────────────────
 
 async def send_birthday_reminders():
-    users = get_all_users()  # Fetch all users with their birthday and notification status
+    logger.info("Executing scheduled birthday reminders...")
+    users = get_all_users()
     today = datetime.now().date()
+    count = 0
 
     for telegram_id, birthday, notifications_enabled in users:
-        # Proceed if the birthday is set
-        if birthday:
+        if not birthday:
+            continue
+
+        try:
             birthday_date = datetime.strptime(birthday, "%Y-%m-%d").date()
-            next_birthday = birthday_date.replace(year=today.year)
-            if next_birthday < today:
-                next_birthday = next_birthday.replace(year=today.year + 1)
+        except ValueError:
+            continue
 
-            days_until_birthday = (next_birthday - today).days
+        next_birthday = birthday_date.replace(year=today.year)
+        if next_birthday < today:
+            next_birthday = next_birthday.replace(year=today.year + 1)
 
-            try:
-                if days_until_birthday == 0:  # Birthday is today
-                    await bot.send_message(
-                        chat_id=telegram_id,
-                        text="🎉🎂 *Happy Birthday!* 🎂🎉\n\n"
-                             "Wishing you a fantastic day filled with joy, laughter, and celebrations!",
-                        parse_mode="Markdown"
-                    )
-                elif days_until_birthday > 0 and notifications_enabled:  # Birthday is in the future
-                    await bot.send_message(
-                        chat_id=telegram_id,
-                        text=f"🎉 Your birthday is in *{days_until_birthday} days*!",
-                        parse_mode="Markdown"
-                    )
-            except BotBlocked:
-                pass
-            except UserDeactivated:
-                pass
-            except ChatNotFound:
-                pass
-            except Exception:
-                pass
+        days_until = (next_birthday - today).days
 
-            # Add delay to respect rate limits
-            await asyncio.sleep(0.04)
+        if days_until == 0:
+            text = (
+                "🎉🎂 *Happy Birthday!* 🎂🎉\n\n"
+                "Today is your special day! Wishing you joy, laughter, and all the best! 🥳"
+            )
+        elif days_until == 1 and notifications_enabled:
+            text = (
+                "🎂 *Your birthday is tomorrow!*\n\n"
+                "Get ready to celebrate — your special day is just around the corner! 🥳"
+            )
+        elif days_until == 7 and notifications_enabled:
+            text = (
+                "🎂 *One week until your birthday!*\n\n"
+                "Only 7 days to go — hope you're planning something fun! 🎉"
+            )
+        elif days_until == 30 and notifications_enabled:
+            text = (
+                "📅 *30 days until your birthday!*\n\n"
+                "Just a heads-up — your special day is a month away! 🎂"
+            )
+        else:
+            continue
+
+        try:
+            await bot.send_message(chat_id=telegram_id, text=text, parse_mode="Markdown")
+            count += 1
+        except (BotBlocked, UserDeactivated, ChatNotFound):
+            pass
+        except Exception as e:
+            logger.warning(f"Failed to send birthday reminder to {telegram_id}: {e}")
+
+        await asyncio.sleep(0.04)
+        
+    # --- Friend Birthdays ---
+    friend_bdays = get_all_friend_birthdays()
+    for user_id, friend_name, bday_str, notifications_enabled in friend_bdays:
+        if not notifications_enabled:
+            continue
+        try:
+            bday_date = datetime.strptime(bday_str, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+            
+        next_bday = bday_date.replace(year=today.year)
+        if next_bday < today:
+            next_bday = next_bday.replace(year=today.year + 1)
+            
+        days_until = (next_bday - today).days
+        
+        if days_until == 0:
+            text = f"🎉🎂 *It's {friend_name}'s Birthday Today!* 🎂🎉\n\nDon't forget to wish them well!"
+        elif days_until == 1:
+            text = f"🎂 *Reminder: {friend_name}'s birthday is tomorrow!*\n\nMake sure to prepare a gift! 🎁"
+        elif days_until == 7:
+            text = f"🎂 *{friend_name}'s birthday is in exactly 1 week!*\n\nTime to start planning! 🎉"
+        else:
+            continue
+            
+        try:
+            await bot.send_message(chat_id=user_id, text=text, parse_mode="Markdown")
+            count += 1
+        except Exception as e:
+            pass
+        await asyncio.sleep(0.04)
+
+    if count:
+        logger.info(f"Birthday reminders sent: {count}")
 
 
-async def daily_birthday_task():
-    while True:
-        now = datetime.utcnow()  # Use UTC for global scheduling
-        next_run = (now + timedelta(days=1)).replace(hour=1, minute=0, second=0, microsecond=0)
-        #next_run = now + timedelta(seconds=10)
-        if next_run < now:  # If the next run is earlier than now, adjust to the next day
-            next_run = next_run + timedelta(days=1)
-        sleep_time = (next_run - now).total_seconds()
-
-        #logging.info(f"Sleeping for {sleep_time} seconds until 6 AM UTC.")
-        await asyncio.sleep(sleep_time)
-
-        #logging.info("Sending daily birthday reminders...")
-        await send_birthday_reminders()
-
-
-
-from aiogram.utils.exceptions import BotBlocked, UserDeactivated, ChatNotFound
-
+# ─────────────────────────────────────────────
+# EVENT REMINDERS
+# ─────────────────────────────────────────────
 
 async def send_event_reminders():
-    # Send reminders for tomorrow's events
-    events_tomorrow = get_tomorrows_events()
-    for user_id, event_name, event_date in events_tomorrow:
+    logger.info("Executing scheduled event reminders...")
+    count = 0
+
+    # Tomorrow's events
+    for user_id, event_name, event_date in get_tomorrows_events():
         try:
+            formatted_date = datetime.strptime(str(event_date), "%Y-%m-%d").strftime("%B %d, %Y").replace(" 0", " ")
             await bot.send_message(
                 chat_id=user_id,
-                text=f"⏰ Reminder: Your event *{event_name}* is scheduled for tomorrow, *{event_date}*!",
+                text=(
+                    f"⏰ *Reminder: Tomorrow's Event*\n\n"
+                    f"📅 *{event_name}*\n"
+                    f"🗓 {formatted_date}\n\n"
+                    "Make sure you're prepared! 💪"
+                ),
                 parse_mode="Markdown"
             )
+            count += 1
         except (BotBlocked, UserDeactivated, ChatNotFound):
             pass
-        except Exception:
-            pass
-
-        # Add delay to respect rate limits
+        except Exception as e:
+            logger.warning(f"Failed to send tomorrow event reminder to {user_id}: {e}")
         await asyncio.sleep(0.04)
 
-    # Send reminders for today's events
-    events_today = get_todays_events()
-    for user_id, event_name, event_date in events_today:
+    # Today's events
+    for user_id, event_name, event_date in get_todays_events():
         try:
+            formatted_date = datetime.strptime(str(event_date), "%Y-%m-%d").strftime("%B %d, %Y").replace(" 0", " ")
             await bot.send_message(
                 chat_id=user_id,
-                text=f"⏰ Reminder: Your event *{event_name}* is happening today, *{event_date}*!",
+                text=(
+                    f"🔴 *Today's Event*\n\n"
+                    f"📅 *{event_name}*\n"
+                    f"🗓 {formatted_date}\n\n"
+                    "It's happening today — good luck! 🌟"
+                ),
                 parse_mode="Markdown"
             )
+            count += 1
         except (BotBlocked, UserDeactivated, ChatNotFound):
             pass
-        except Exception:
-            pass
-
-        # Add delay to respect rate limits
+        except Exception as e:
+            logger.warning(f"Failed to send today event reminder to {user_id}: {e}")
         await asyncio.sleep(0.04)
 
-
-async def daily_event_task():
-    while True:
-        now = datetime.utcnow()  # Use UTC for global scheduling
-        next_run = (now + timedelta(days=1)).replace(hour=1, minute=0, second=0, microsecond=0)
-        #next_run = now + timedelta(seconds=10)
-        if next_run < now:  # If the next run is earlier than now, adjust to the next day
-            next_run = next_run + timedelta(days=1)
-        sleep_time = (next_run - now).total_seconds()
-
-        await asyncio.sleep(sleep_time)
-
-        await send_event_reminders()
+    if count:
+        logger.info(f"Event reminders sent: {count}")
 
 
-
+# ─────────────────────────────────────────────
+# ENTRY POINT
+# ─────────────────────────────────────────────
 
 if __name__ == "__main__":
-    from aiogram import executor
+    logger.info("Bot is starting...")
+    
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(send_birthday_reminders, trigger='cron', hour=1, minute=0)
+    scheduler.add_job(send_event_reminders, trigger='cron', hour=1, minute=0)
+    
+    async def on_startup(dispatcher):
+        scheduler.start()
 
-    loop = asyncio.get_event_loop()  # Get the event loop once
-    loop.create_task(daily_event_task())  # Schedule the event reminder task
-    loop.create_task(daily_birthday_task())  # Schedule the birthday reminder task
-
-    executor.start_polling(dp, skip_updates=True, loop=loop)  # Start polling using the same loop
-
+    executor.start_polling(dp, skip_updates=True, on_startup=on_startup)

@@ -38,6 +38,18 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
         task_name TEXT NOT NULL,
+        status INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    )
+    """)
+    
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS friend_birthdays (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        friend_name TEXT NOT NULL,
+        birthday DATE NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
     )
@@ -124,16 +136,73 @@ def get_tasks_by_user(user_id):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT id, task_name FROM tasks WHERE user_id = ?
+        SELECT id, task_name, status FROM tasks WHERE user_id = ?
     """, (user_id,))
     tasks = cursor.fetchall()
     conn.close()
     return tasks
 
+def toggle_task(task_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT status FROM tasks WHERE id = ?", (task_id,))
+    row = cursor.fetchone()
+    if row:
+        new_status = 0 if row[0] == 1 else 1
+        cursor.execute("UPDATE tasks SET status = ? WHERE id = ?", (new_status, task_id))
+        conn.commit()
+    conn.close()
+
 def delete_task(task_id):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+    conn.commit()
+    conn.close()
+
+def add_friend_birthday(user_id, friend_name, birthday):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO friend_birthdays (user_id, friend_name, birthday) 
+        VALUES (?, ?, ?)
+    """, (user_id, friend_name, birthday))
+    conn.commit()
+    conn.close()
+
+def get_friend_birthdays(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, friend_name, birthday FROM friend_birthdays WHERE user_id = ?
+    """, (user_id,))
+    friends = cursor.fetchall()
+    conn.close()
+    return friends
+
+def get_all_friend_birthdays():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT fb.user_id, fb.friend_name, fb.birthday, u.notifications_enabled 
+        FROM friend_birthdays fb
+        JOIN users u ON fb.user_id = u.id
+    """)
+    res = cursor.fetchall()
+    conn.close()
+    return res
+
+def delete_friend_birthday(friend_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM friend_birthdays WHERE id = ?", (friend_id,))
+    conn.commit()
+    conn.close()
+
+def delete_all_tasks(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM tasks WHERE user_id = ?", (user_id,))
     conn.commit()
     conn.close()
 
